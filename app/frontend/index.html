@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>Login / Register</h2>
+
+<div id="auth">
+  <input id="email" placeholder="Email"><br><br>
+  <input id="password" type="password" placeholder="Password"><br><br>
+
+  <button onclick="register()">Register</button>
+  <button onclick="login()">Login</button>
+</div>
+
+<hr>
+
+<div id="dash" style="display:none;">
+  <h2>Dashboard</h2>
+
+  <h3>Add Customer</h3>
+  <input id="name" placeholder="Name">
+  <input id="phone" placeholder="Phone">
+  <input id="address" placeholder="Address">
+  <input id="area" placeholder="Area">
+  <button onclick="addCustomer()">Add</button>
+
+  <h3>Customers</h3>
+  <button onclick="loadCustomers()">Refresh</button>
+  <ul id="list"></ul>
+
+  <button onclick="logout()">Logout</button>
+</div>
+
+<script>
+const API = "http://127.0.0.1:8000";
+
+// ---------- DOM REFERENCES ----------
+const authDiv = document.getElementById("auth");
+const dashDiv = document.getElementById("dash");
+
+const emailInput = document.getElementById("email");
+const passwordInput = document.getElementById("password");
+
+const nameInput = document.getElementById("name");
+const phoneInput = document.getElementById("phone");
+const addressInput = document.getElementById("address");
+const areaInput = document.getElementById("area");
+
+const list = document.getElementById("list");
+
+// ---------- INIT ----------
+function init(){
+  const token = localStorage.getItem("token");
+
+  if(token){
+    authDiv.style.display = "none";
+    dashDiv.style.display = "block";
+    loadCustomers();
+  } else {
+    authDiv.style.display = "block";
+    dashDiv.style.display = "none";
+  }
+}
+
+window.onload = init;
+
+
+// ---------- AUTH ----------
+function register(){
+  fetch(API+"/register",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      email: emailInput.value,
+      password: passwordInput.value
+    })
+  })
+  .then(r=>r.json())
+  .then(d=>{
+    alert(JSON.stringify(d));
+  });
+}
+
+function login(){
+  fetch(API+"/login",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      email: emailInput.value,
+      password: passwordInput.value
+    })
+  })
+  .then(async r=>{
+    const data = await r.json();
+    console.log("LOGIN RESPONSE:", data);
+
+    if(data.token){
+      localStorage.setItem("token", data.token);
+      init();
+    } else {
+      alert("Invalid credentials");
+    }
+  })
+  .catch(err=>{
+    console.error(err);
+    alert("Backend error");
+  });
+}
+
+function logout(){
+  localStorage.clear();
+  init();
+}
+
+
+// ---------- CUSTOMER ----------
+function addCustomer(){
+  fetch(API+"/customers?token="+localStorage.getItem("token"),{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      name: nameInput.value,
+      phone: phoneInput.value,
+      address: addressInput.value,
+      area: areaInput.value
+    })
+  }).then(loadCustomers);
+}
+
+function loadCustomers(){
+  fetch(API+"/customers?token="+localStorage.getItem("token"))
+  .then(r=>r.json())
+  .then(data=>{
+    list.innerHTML = "";
+
+    data.forEach(c=>{
+      list.innerHTML += `
+        <li>${c.name} - ${c.phone}
+        <button onclick="del(${c.id})">Delete</button></li>`;
+    });
+  });
+}
+
+function del(id){
+  fetch(API+"/customers/"+id+"?token="+localStorage.getItem("token"),{
+    method:"DELETE"
+  }).then(loadCustomers);
+}
+</script>
+
+</body>
+</html>
