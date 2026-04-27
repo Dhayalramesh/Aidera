@@ -1,64 +1,91 @@
 <!DOCTYPE html>
 <html>
+<head>
+  <title>Aidera</title>
+
+  <style>
+    body {
+      font-family: Arial;
+      background: #f3f4f6;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      width: 350px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .login { background: blue; color: white; }
+    .register { background: green; color: white; }
+    .add { background: #0284c7; color: white; }
+    .logout { background: red; color: white; }
+
+    .hidden { display: none; }
+  </style>
+</head>
+
 <body>
 
-<h2>Login / Register</h2>
+<div class="card" id="auth">
+  <h2>Login / Register</h2>
 
-<div id="auth">
-  <input id="email" placeholder="Email"><br><br>
-  <input id="password" type="password" placeholder="Password"><br><br>
+  <input id="email" placeholder="Email">
+  <input id="password" type="password" placeholder="Password">
 
-  <button onclick="register()">Register</button>
-  <button onclick="login()">Login</button>
+  <button class="login" onclick="login()">Login</button>
+  <button class="register" onclick="register()">Register</button>
 </div>
 
-<hr>
-
-<div id="dash" style="display:none;">
+<div class="card hidden" id="dash">
   <h2>Dashboard</h2>
 
-  <h3>Add Customer</h3>
   <input id="name" placeholder="Name">
   <input id="phone" placeholder="Phone">
   <input id="address" placeholder="Address">
   <input id="area" placeholder="Area">
-  <button onclick="addCustomer()">Add</button>
+
+  <button class="add" onclick="addCustomer()">Add Customer</button>
 
   <h3>Customers</h3>
   <button onclick="loadCustomers()">Refresh</button>
   <ul id="list"></ul>
 
-  <button onclick="logout()">Logout</button>
+  <button class="logout" onclick="logout()">Logout</button>
 </div>
 
 <script>
 const API = "http://127.0.0.1:8000";
 
-// ---------- DOM REFERENCES ----------
-const authDiv = document.getElementById("auth");
-const dashDiv = document.getElementById("dash");
-
-const emailInput = document.getElementById("email");
-const passwordInput = document.getElementById("password");
-
-const nameInput = document.getElementById("name");
-const phoneInput = document.getElementById("phone");
-const addressInput = document.getElementById("address");
-const areaInput = document.getElementById("area");
-
-const list = document.getElementById("list");
-
-// ---------- INIT ----------
 function init(){
   const token = localStorage.getItem("token");
 
   if(token){
-    authDiv.style.display = "none";
-    dashDiv.style.display = "block";
+    document.getElementById("auth").classList.add("hidden");
+    document.getElementById("dash").classList.remove("hidden");
     loadCustomers();
   } else {
-    authDiv.style.display = "block";
-    dashDiv.style.display = "none";
+    document.getElementById("auth").classList.remove("hidden");
+    document.getElementById("dash").classList.add("hidden");
   }
 }
 
@@ -67,43 +94,43 @@ window.onload = init;
 
 // ---------- AUTH ----------
 function register(){
-  fetch(API+"/register",{
+  fetch(API + "/register", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
-      email: emailInput.value,
-      password: passwordInput.value
+      email: document.getElementById("email").value,
+      password: document.getElementById("password").value
     })
   })
-  .then(r=>r.json())
-  .then(d=>{
-    alert(JSON.stringify(d));
+  .then(async r=>{
+    const d = await r.json();
+    if(r.status !== 200){
+      alert("Register failed: " + JSON.stringify(d));
+      return;
+    }
+    alert("Registered successfully");
   });
 }
 
 function login(){
-  fetch(API+"/login",{
+  fetch(API + "/login", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
-      email: emailInput.value,
-      password: passwordInput.value
+      email: document.getElementById("email").value,
+      password: document.getElementById("password").value
     })
   })
   .then(async r=>{
-    const data = await r.json();
-    console.log("LOGIN RESPONSE:", data);
+    const d = await r.json();
 
-    if(data.token){
-      localStorage.setItem("token", data.token);
-      init();
-    } else {
-      alert("Invalid credentials");
+    if(r.status !== 200){
+      alert("Login failed: " + JSON.stringify(d));
+      return;
     }
-  })
-  .catch(err=>{
-    console.error(err);
-    alert("Backend error");
+
+    localStorage.setItem("token", d.token);
+    init();
   });
 }
 
@@ -113,24 +140,47 @@ function logout(){
 }
 
 
-// ---------- CUSTOMER ----------
+// ---------- CUSTOMERS ----------
 function addCustomer(){
-  fetch(API+"/customers?token="+localStorage.getItem("token"),{
+  fetch(API + "/customers", {
     method:"POST",
-    headers:{"Content-Type":"application/json"},
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":"Bearer " + localStorage.getItem("token")
+    },
     body:JSON.stringify({
-      name: nameInput.value,
-      phone: phoneInput.value,
-      address: addressInput.value,
-      area: areaInput.value
+      name: document.getElementById("name").value,
+      phone: document.getElementById("phone").value,
+      address: document.getElementById("address").value,
+      area: document.getElementById("area").value
     })
-  }).then(loadCustomers);
+  })
+  .then(res=>{
+    if(res.status === 401){
+      logout();
+      return;
+    }
+    loadCustomers();
+  });
 }
 
 function loadCustomers(){
-  fetch(API+"/customers?token="+localStorage.getItem("token"))
-  .then(r=>r.json())
+  fetch(API + "/customers", {
+    headers:{
+      "Authorization":"Bearer " + localStorage.getItem("token")
+    }
+  })
+  .then(res=>{
+    if(res.status === 401){
+      logout();
+      return null;
+    }
+    return res.json();
+  })
   .then(data=>{
+    if(!data) return;
+
+    const list = document.getElementById("list");
     list.innerHTML = "";
 
     data.forEach(c=>{
@@ -142,9 +192,13 @@ function loadCustomers(){
 }
 
 function del(id){
-  fetch(API+"/customers/"+id+"?token="+localStorage.getItem("token"),{
-    method:"DELETE"
-  }).then(loadCustomers);
+  fetch(API + "/customers/" + id, {
+    method:"DELETE",
+    headers:{
+      "Authorization":"Bearer " + localStorage.getItem("token")
+    }
+  })
+  .then(()=>loadCustomers());
 }
 </script>
 

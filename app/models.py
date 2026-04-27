@@ -17,3 +17,5 @@ class Customer(Base):
     phone = Column(String)
     address = Column(String)
     area = Column(String)
+
+    user_email = Column(String)   # IMPORTANT

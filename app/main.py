@@ -1,17 +1,18 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Header
 from sqlalchemy.orm import Session
 from .db import Base, engine, SessionLocal
 from .models import User, Customer
 from pydantic import BaseModel
 import hashlib
-from jose import jwt
+from jose import jwt, JWTError
 from fastapi.middleware.cors import CORSMiddleware
 
+# ---------- CONFIG ----------
 SECRET = "secret123"
+ALGO = "HS256"
 
 app = FastAPI()
 
-# ✅ CORS (required for frontend)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,7 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Create tables
 Base.metadata.create_all(bind=engine)
 
 # ---------- DB ----------
@@ -47,31 +47,27 @@ def hash_pw(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
 # ---------- TOKEN ----------
-def create_token(email):
-    return jwt.encode({"email": email}, SECRET, algorithm="HS256")
+def create_token(email: str):
+    return jwt.encode({"email": email}, SECRET, algorithm=ALGO)
 
-def verify_token(token):
+def verify_token(authorization: str = Header(None)):
+    if not authorization:
+        return None
+
     try:
-        data = jwt.decode(token, SECRET, algorithms=["HS256"])
-        return data["email"]
+        token = authorization.split(" ")[1]
+        data = jwt.decode(token, SECRET, algorithms=[ALGO])
+        return data.get("email")
     except:
         return None
 
 # ---------- AUTH ----------
-
 @app.post("/register")
 def register(user: UserIn, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.email == user.email).first()
+    if db.query(User).filter(User.email == user.email).first():
+        raise HTTPException(400, "User exists")
 
-    if existing:
-        raise HTTPException(status_code=400, detail="User exists")
-
-    new_user = User(
-        email=user.email,
-        password=hash_pw(user.password)
-    )
-
-    db.add(new_user)
+    db.add(User(email=user.email, password=hash_pw(user.password)))
     db.commit()
 
     return {"msg": "registered"}
@@ -79,63 +75,66 @@ def register(user: UserIn, db: Session = Depends(get_db)):
 
 @app.post("/login")
 def login(user: UserIn, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.email == user.email).first()
+    u = db.query(User).filter(User.email == user.email).first()
 
-    if not db_user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not u or u.password != hash_pw(user.password):
+        raise HTTPException(401, "Invalid credentials")
 
-    if db_user.password != hash_pw(user.password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    token = create_token(user.email)
-
-    return {"token": token}
+    return {"token": create_token(user.email)}
 
 # ---------- CUSTOMERS ----------
-
 @app.get("/customers")
-def get_customers(token: str, db: Session = Depends(get_db)):
-    email = verify_token(token)
-
+def get_customers(
+    db: Session = Depends(get_db),
+    email: str = Depends(verify_token)
+):
     if not email:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(401, "Invalid token")
 
-    return db.query(Customer).all()
+    return db.query(Customer).filter(Customer.user_email == email).all()
 
 
 @app.post("/customers")
-def add_customer(data: CustomerIn, token: str, db: Session = Depends(get_db)):
-    email = verify_token(token)
-
+def add_customer(
+    data: CustomerIn,
+    db: Session = Depends(get_db),
+    email: str = Depends(verify_token)
+):
     if not email:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(401, "Invalid token")
 
-    new_customer = Customer(
+    c = Customer(
         name=data.name,
         phone=data.phone,
         address=data.address,
-        area=data.area
+        area=data.area,
+        user_email=email
     )
 
-    db.add(new_customer)
+    db.add(c)
     db.commit()
 
     return {"msg": "added"}
 
 
 @app.delete("/customers/{id}")
-def delete_customer(id: int, token: str, db: Session = Depends(get_db)):
-    email = verify_token(token)
-
+def delete_customer(
+    id: int,
+    db: Session = Depends(get_db),
+    email: str = Depends(verify_token)
+):
     if not email:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(401, "Invalid token")
 
-    customer = db.query(Customer).filter(Customer.id == id).first()
+    c = db.query(Customer).filter(
+        Customer.id == id,
+        Customer.user_email == email
+    ).first()
 
-    if not customer:
-        raise HTTPException(status_code=404, detail="Not found")
+    if not c:
+        raise HTTPException(404, "Not found")
 
-    db.delete(customer)
+    db.delete(c)
     db.commit()
 
     return {"msg": "deleted"}
